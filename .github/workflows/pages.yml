@@ -1,0 +1,71 @@
+name: Publicar en GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+# Permisos mínimos para publicar el sitio.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un despliegue a la vez; si llegan varios, gana el último.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Pruebas del motor clínico y nutricional
+        run: node --test "tests/*.test.mjs"
+
+      - name: Instalar Playwright
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Levantar el sitio
+        run: |
+          python3 -m http.server 8099 --directory site &
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8099/index.html >/dev/null && break
+            sleep 0.5
+          done
+
+      - name: Prueba de humo en navegador
+        run: node tests/smoke.mjs http://127.0.0.1:8099/
+
+  publicar:
+    name: Desplegar
+    needs: verificar
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - name: Empaquetar el sitio
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - name: Desplegar
+        id: deployment
+        uses: actions/deploy-pages@v4

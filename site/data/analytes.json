@@ -1,0 +1,577 @@
+{
+  "version": "2026.08.1",
+  "generated": "2026-08-17",
+  "note": "Diccionario universal de analitos. Cada analito se identifica por LOINC y sus unidades por UCUM, de modo que un resultado emitido por cualquier laboratorio pueda normalizarse antes de entrar al historial.",
+  "axes": {
+    "reservas": {
+      "label": "Reservas",
+      "desc": "Hierro almacenado en el organismo"
+    },
+    "disponibilidad": {
+      "label": "Disponibilidad",
+      "desc": "Hierro circulante y transportado"
+    },
+    "hemograma": {
+      "label": "Hemograma",
+      "desc": "Efecto sobre la serie roja"
+    },
+    "cofactores": {
+      "label": "Cofactores",
+      "desc": "Nutrientes y factores que acompañan la eritropoyesis"
+    },
+    "inflamacion": {
+      "label": "Inflamación",
+      "desc": "Contexto que modifica la lectura de la ferritina"
+    }
+  },
+  "analytes": [
+    {
+      "id": "ferritina",
+      "loinc": "2276-4",
+      "label": "Ferritina",
+      "short": "Ferritina",
+      "axis": "reservas",
+      "ucum": "ug/L",
+      "displayUnit": "ng/mL",
+      "unitAliases": {
+        "ng/mL": 1,
+        "ug/L": 1,
+        "µg/L": 1,
+        "mcg/L": 1,
+        "ng/ml": 1
+      },
+      "decimals": 1,
+      "direction": "higher_better",
+      "aliases": [
+        "ferritina",
+        "ferritin",
+        "ferritina serica",
+        "ferritina sérica"
+      ],
+      "plain": "Es la despensa de hierro del cuerpo. Si está baja, las reservas están vacías aunque la hemoglobina se vea bien.",
+      "plausible": [
+        0.1,
+        5000
+      ],
+      "code": "Fer"
+    },
+    {
+      "id": "hierro_serico",
+      "loinc": "2498-4",
+      "label": "Hierro sérico",
+      "short": "Hierro",
+      "axis": "disponibilidad",
+      "ucum": "ug/dL",
+      "displayUnit": "µg/dL",
+      "unitAliases": {
+        "ug/dL": 1,
+        "µg/dL": 1,
+        "mcg/dL": 1,
+        "umol/L": 5.5866,
+        "µmol/L": 5.5866
+      },
+      "decimals": 1,
+      "direction": "higher_better",
+      "aliases": [
+        "hierro serico",
+        "hierro sérico",
+        "hierro",
+        "iron",
+        "fe serico"
+      ],
+      "plain": "El hierro que viaja ahora mismo por la sangre. Cambia mucho durante el día, por eso se lee junto con la transferrina.",
+      "plausible": [
+        1,
+        600
+      ],
+      "code": "Fe"
+    },
+    {
+      "id": "transferrina",
+      "loinc": "3034-6",
+      "label": "Transferrina",
+      "short": "Transferrina",
+      "axis": "disponibilidad",
+      "ucum": "mg/dL",
+      "displayUnit": "mg/dL",
+      "unitAliases": {
+        "mg/dL": 1,
+        "g/L": 100,
+        "mg/L": 0.1
+      },
+      "decimals": 0,
+      "direction": "context",
+      "aliases": [
+        "transferrina",
+        "transferrin"
+      ],
+      "plain": "El camión que transporta el hierro. Cuando falta hierro, el cuerpo fabrica más camiones para no perder ni una pizca.",
+      "plausible": [
+        50,
+        700
+      ],
+      "code": "Trf"
+    },
+    {
+      "id": "sat_transferrina",
+      "loinc": "2500-7",
+      "label": "Saturación de transferrina",
+      "short": "Saturación",
+      "axis": "disponibilidad",
+      "ucum": "%",
+      "displayUnit": "%",
+      "unitAliases": {
+        "%": 1,
+        "fraccion": 100
+      },
+      "decimals": 2,
+      "direction": "higher_better",
+      "aliases": [
+        "saturacion de transferrina",
+        "saturación de transferrina",
+        "indice de saturacion",
+        "sat transferrina",
+        "tsat",
+        "saturacion transferrina"
+      ],
+      "plain": "Cuán llenos van esos camiones. Es el mejor indicador de si llega hierro suficiente a la fábrica de glóbulos rojos.",
+      "plausible": [
+        0.1,
+        100
+      ],
+      "code": "Sat"
+    },
+    {
+      "id": "tibc",
+      "loinc": "2501-5",
+      "label": "Capacidad total de fijación (TIBC)",
+      "short": "TIBC",
+      "axis": "disponibilidad",
+      "ucum": "ug/dL",
+      "displayUnit": "µg/dL",
+      "unitAliases": {
+        "ug/dL": 1,
+        "µg/dL": 1,
+        "umol/L": 5.5866
+      },
+      "decimals": 0,
+      "direction": "context",
+      "aliases": [
+        "tibc",
+        "capacidad total de fijacion de hierro",
+        "capacidad de fijacion"
+      ],
+      "plain": "Cuánto hierro podría transportar la sangre si todos los camiones fueran llenos.",
+      "plausible": [
+        50,
+        900
+      ],
+      "code": "TIBC"
+    },
+    {
+      "id": "hemoglobina",
+      "loinc": "718-7",
+      "label": "Hemoglobina",
+      "short": "Hemoglobina",
+      "axis": "hemograma",
+      "ucum": "g/dL",
+      "displayUnit": "g/dL",
+      "unitAliases": {
+        "g/dL": 1,
+        "g/L": 0.1,
+        "g/l": 0.1
+      },
+      "decimals": 1,
+      "direction": "higher_better",
+      "aliases": [
+        "hemoglobina",
+        "hb",
+        "hgb",
+        "haemoglobin"
+      ],
+      "plain": "El oxígeno viaja pegado a ella. Es lo último que cae y lo primero que se recupera.",
+      "plausible": [
+        2,
+        25
+      ],
+      "code": "Hb"
+    },
+    {
+      "id": "hematocrito",
+      "loinc": "4544-3",
+      "label": "Hematocrito",
+      "short": "Hematocrito",
+      "axis": "hemograma",
+      "ucum": "%",
+      "displayUnit": "%",
+      "unitAliases": {
+        "%": 1
+      },
+      "decimals": 1,
+      "direction": "higher_better",
+      "aliases": [
+        "hematocrito",
+        "hto",
+        "hct"
+      ],
+      "plain": "Qué proporción de la sangre son glóbulos rojos.",
+      "plausible": [
+        10,
+        70
+      ],
+      "code": "Hto"
+    },
+    {
+      "id": "hematies",
+      "loinc": "789-8",
+      "label": "Recuento de hematíes",
+      "short": "Hematíes",
+      "axis": "hemograma",
+      "ucum": "10*6/uL",
+      "displayUnit": "×10⁶/µL",
+      "unitAliases": {
+        "x 10^6 cel/uL": 1,
+        "x10^6/uL": 1,
+        "10*6/uL": 1,
+        "10^12/L": 1,
+        "mill/mm3": 1
+      },
+      "decimals": 2,
+      "direction": "higher_better",
+      "aliases": [
+        "recuento de hematies",
+        "hematies",
+        "eritrocitos",
+        "rbc",
+        "globulos rojos"
+      ],
+      "plain": "Cuántos glóbulos rojos hay. Con poco hierro el cuerpo los hace más pequeños antes de hacer menos.",
+      "plausible": [
+        1,
+        9
+      ],
+      "code": "RBC"
+    },
+    {
+      "id": "vcm",
+      "loinc": "787-2",
+      "label": "Volumen corpuscular medio (VCM)",
+      "short": "VCM",
+      "axis": "hemograma",
+      "ucum": "fL",
+      "displayUnit": "fL",
+      "unitAliases": {
+        "fL": 1,
+        "fl": 1,
+        "um3": 1
+      },
+      "decimals": 1,
+      "direction": "context",
+      "aliases": [
+        "vcm",
+        "mcv",
+        "volumen corpuscular medio"
+      ],
+      "plain": "El tamaño promedio de cada glóbulo rojo. Sin hierro salen pequeñitos.",
+      "plausible": [
+        40,
+        140
+      ],
+      "code": "VCM"
+    },
+    {
+      "id": "hcm",
+      "loinc": "785-6",
+      "label": "Hemoglobina corpuscular media (HCM)",
+      "short": "HCM",
+      "axis": "hemograma",
+      "ucum": "pg",
+      "displayUnit": "pg",
+      "unitAliases": {
+        "pg": 1
+      },
+      "decimals": 1,
+      "direction": "context",
+      "aliases": [
+        "hcm",
+        "mch",
+        "hemoglobina corpuscular media"
+      ],
+      "plain": "Cuánta hemoglobina lleva cargada cada glóbulo rojo.",
+      "plausible": [
+        10,
+        50
+      ],
+      "code": "HCM"
+    },
+    {
+      "id": "chcm",
+      "loinc": "786-4",
+      "label": "Concentración de Hb corpuscular media (CHCM)",
+      "short": "CHCM",
+      "axis": "hemograma",
+      "ucum": "g/dL",
+      "displayUnit": "g/dL",
+      "unitAliases": {
+        "g/dL": 1,
+        "g/L": 0.1
+      },
+      "decimals": 1,
+      "direction": "context",
+      "aliases": [
+        "chcm",
+        "mchc",
+        "concentracion de hemoglobina corpuscular media"
+      ],
+      "plain": "Qué tan concentrada va la hemoglobina dentro de cada célula.",
+      "plausible": [
+        20,
+        45
+      ],
+      "code": "CHCM"
+    },
+    {
+      "id": "rdw_cv",
+      "loinc": "788-0",
+      "label": "RDW-CV",
+      "short": "RDW-CV",
+      "axis": "hemograma",
+      "ucum": "%",
+      "displayUnit": "%",
+      "unitAliases": {
+        "%": 1
+      },
+      "decimals": 1,
+      "direction": "lower_better",
+      "aliases": [
+        "rdw-cv",
+        "rdw cv",
+        "rdw",
+        "amplitud de distribucion eritrocitaria"
+      ],
+      "plain": "Mide si los glóbulos rojos son todos del mismo tamaño. Sube cuando conviven glóbulos viejos pequeños con glóbulos nuevos sanos: suele ser la primera señal de que algo cambió.",
+      "plausible": [
+        8,
+        40
+      ],
+      "code": "RDW"
+    },
+    {
+      "id": "rdw_sd",
+      "loinc": "21000-5",
+      "label": "RDW-SD",
+      "short": "RDW-SD",
+      "axis": "hemograma",
+      "ucum": "fL",
+      "displayUnit": "fL",
+      "unitAliases": {
+        "fL": 1,
+        "fl": 1
+      },
+      "decimals": 1,
+      "direction": "lower_better",
+      "aliases": [
+        "rdw-sd",
+        "rdw sd"
+      ],
+      "plain": "La misma idea que el RDW-CV, medida en tamaño absoluto.",
+      "plausible": [
+        20,
+        120
+      ],
+      "code": "RDWs"
+    },
+    {
+      "id": "reticulocitos",
+      "loinc": "17849-1",
+      "label": "Reticulocitos",
+      "short": "Reticulocitos",
+      "axis": "hemograma",
+      "ucum": "%",
+      "displayUnit": "%",
+      "unitAliases": {
+        "%": 1
+      },
+      "decimals": 2,
+      "direction": "context",
+      "aliases": [
+        "reticulocitos",
+        "reticulocytes",
+        "retics"
+      ],
+      "plain": "Glóbulos rojos recién nacidos. Si suben tras iniciar tratamiento, la médula está respondiendo.",
+      "plausible": [
+        0,
+        30
+      ],
+      "code": "Ret"
+    },
+    {
+      "id": "vitamina_b12",
+      "loinc": "2132-9",
+      "label": "Vitamina B12",
+      "short": "B12",
+      "axis": "cofactores",
+      "ucum": "pg/mL",
+      "displayUnit": "pg/mL",
+      "unitAliases": {
+        "pg/mL": 1,
+        "ng/L": 1,
+        "pmol/L": 0.7378
+      },
+      "decimals": 0,
+      "direction": "higher_better",
+      "aliases": [
+        "vitamina b-12",
+        "vitamina b12",
+        "b12",
+        "cobalamina"
+      ],
+      "plain": "Necesaria para fabricar glóbulos rojos. Si falta, el cuadro se mezcla y confunde.",
+      "plausible": [
+        30,
+        3000
+      ],
+      "code": "B12"
+    },
+    {
+      "id": "acido_folico",
+      "loinc": "2284-8",
+      "label": "Ácido fólico",
+      "short": "Folato",
+      "axis": "cofactores",
+      "ucum": "ng/mL",
+      "displayUnit": "ng/mL",
+      "unitAliases": {
+        "ng/mL": 1,
+        "ug/L": 1,
+        "nmol/L": 0.4413
+      },
+      "decimals": 1,
+      "direction": "higher_better",
+      "aliases": [
+        "acido folico",
+        "ácido fólico",
+        "folato",
+        "folate"
+      ],
+      "plain": "El otro ladrillo de la fábrica de sangre. Junto con la B12 y el hierro forman el trío.",
+      "plausible": [
+        0.2,
+        100
+      ],
+      "code": "Fol"
+    },
+    {
+      "id": "pcr",
+      "loinc": "1988-5",
+      "label": "Proteína C reactiva (PCR)",
+      "short": "PCR",
+      "axis": "inflamacion",
+      "ucum": "mg/L",
+      "displayUnit": "mg/L",
+      "unitAliases": {
+        "mg/L": 1,
+        "mg/dL": 10
+      },
+      "decimals": 2,
+      "direction": "lower_better",
+      "aliases": [
+        "proteina c reactiva",
+        "pcr",
+        "crp",
+        "pcr ultrasensible"
+      ],
+      "plain": "Marca si hay inflamación o infección. Importa porque la inflamación sube artificialmente la ferritina.",
+      "plausible": [
+        0,
+        500
+      ],
+      "code": "PCR"
+    },
+    {
+      "id": "agp",
+      "loinc": "1863-0",
+      "label": "Alfa-1 glicoproteína ácida (AGP)",
+      "short": "AGP",
+      "axis": "inflamacion",
+      "ucum": "g/L",
+      "displayUnit": "g/L",
+      "unitAliases": {
+        "g/L": 1,
+        "mg/dL": 0.01
+      },
+      "decimals": 2,
+      "direction": "lower_better",
+      "aliases": [
+        "alfa 1 glicoproteina acida",
+        "agp",
+        "orosomucoide"
+      ],
+      "plain": "Otro marcador de inflamación, más lento que la PCR.",
+      "plausible": [
+        0,
+        10
+      ],
+      "code": "AGP"
+    },
+    {
+      "id": "leucocitos",
+      "loinc": "6690-2",
+      "label": "Recuento de leucocitos",
+      "short": "Leucocitos",
+      "axis": "inflamacion",
+      "ucum": "10*3/uL",
+      "displayUnit": "×10³/µL",
+      "unitAliases": {
+        "x 10^3 cel/uL": 1,
+        "x10^3/uL": 1,
+        "10*3/uL": 1,
+        "10^9/L": 1
+      },
+      "decimals": 2,
+      "direction": "context",
+      "aliases": [
+        "recuento de leucocitos",
+        "leucocitos",
+        "wbc",
+        "globulos blancos"
+      ],
+      "plain": "Las defensas. Ayudan a sospechar infección en curso.",
+      "plausible": [
+        0.5,
+        100
+      ],
+      "code": "WBC"
+    },
+    {
+      "id": "plaquetas",
+      "loinc": "777-3",
+      "label": "Recuento de plaquetas",
+      "short": "Plaquetas",
+      "axis": "hemograma",
+      "ucum": "10*3/uL",
+      "displayUnit": "×10³/µL",
+      "unitAliases": {
+        "x 10^3 cel/uL": 1,
+        "x10^3/uL": 1,
+        "10*3/uL": 1,
+        "10^9/L": 1
+      },
+      "decimals": 0,
+      "direction": "context",
+      "aliases": [
+        "recuento de plaquetas",
+        "plaquetas",
+        "platelets",
+        "plt"
+      ],
+      "plain": "Suelen subir cuando hay déficit de hierro o sangrado crónico.",
+      "plausible": [
+        5,
+        2000
+      ],
+      "code": "PLT"
+    }
+  ]
+}
