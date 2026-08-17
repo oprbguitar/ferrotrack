@@ -1,0 +1,90 @@
+name: Actualizar datos de nutrición
+
+# El sitio es estático y vive en GitHub Pages, así que no hay servidor que pueda
+# consultar fuentes externas en caliente. Este flujo hace ese trabajo: corre con
+# red abierta, consulta USDA FoodData Central, regenera site/data/foods.json y
+# abre un pull request con la diferencia. El resultado queda versionado y
+# revisable, que es más de lo que daría una consulta en vivo.
+#
+# Los factores de absorción del seed — hemo, fitatos y polifenoles — nunca se
+# sobrescriben: ninguna API pública los publica y son los que deciden cuánto
+# hierro entra de verdad.
+
+on:
+  schedule:
+    # Lunes a las 06:00 UTC (01:00 en Lima).
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      abrir_pr:
+        description: 'Abrir un pull request con los cambios'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Regenerar el catálogo desde USDA FoodData Central
+        env:
+          # Sin secreto configurado, DEMO_KEY sirve para un puñado de consultas.
+          FDC_API_KEY: ${{ secrets.FDC_API_KEY || 'DEMO_KEY' }}
+        run: python3 scripts/build_food_db.py --online
+
+      - name: Comprobar que el catálogo sigue siendo válido
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Pruebas contra el catálogo nuevo
+        run: node --test "tests/*.test.mjs"
+
+      - name: ¿Hubo cambios?
+        id: diff
+        run: |
+          if git diff --quiet -- site/data/foods.json; then
+            echo "cambios=no" >> "$GITHUB_OUTPUT"
+            echo "El catálogo no cambió."
+          else
+            echo "cambios=si" >> "$GITHUB_OUTPUT"
+            git diff --stat -- site/data/foods.json
+          fi
+
+      - name: Abrir pull request
+        if: steps.diff.outputs.cambios == 'si'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: datos/nutricion
+          commit-message: |
+            Actualizar el catálogo de alimentos desde USDA FoodData Central
+
+            Regenerado por .github/workflows/nutricion.yml. Solo se refrescan los
+            nutrientes que publica la API; los factores de absorción del seed
+            (hemo, fitatos, polifenoles) quedan intactos.
+          title: 'Datos de nutrición actualizados'
+          body: |
+            Regeneración automática de `site/data/foods.json` desde
+            [USDA FoodData Central](https://fdc.nal.usda.gov/api-guide).
+
+            **Qué se actualiza:** hierro total, vitamina C, calcio, proteína,
+            energía, B12, folato y zinc de los alimentos que declaran una
+            consulta a la API.
+
+            **Qué no se toca:** la fracción de hierro hemo, los fitatos y los
+            polifenoles. No están en ninguna API pública y son los factores que
+            deciden cuánto hierro se absorbe realmente, así que vienen del seed
+            curado en `scripts/build_food_db.py`.
+
+            Las pruebas del motor nutricional corrieron contra el catálogo nuevo
+            antes de abrir este pull request.
+          labels: datos, automático

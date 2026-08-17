@@ -44,15 +44,17 @@ const PATTERNS = [
     group: 1,
   },
   {
-    id: 'orden',
-    label: 'número de orden, solicitud o historia',
-    re: /\b(SOLICITUD|ORDEN(?:\s+EXTERNA)?|PREFACTURA|HISTORIA(?:\s+CL[ÍI]NICA)?|H\.C\.?|EPISODIO|AFILIACI[ÓO]N|P[ÓO]LIZA)\s*:?\s*([\w/-]{3,})/gi,
-    group: 2,
-  },
-  {
+    // Va antes que la regla de orden a propósito: en "Orden Externa : CMP :
+    // 061457", aquella se comería la etiqueta CMP y dejaría el número al aire.
     id: 'colegiatura',
     label: 'colegiatura profesional',
     re: /\b(CMP|RNE|COP|CNP|C\.M\.P\.)\s*:?\s*(\d{3,8})\b/gi,
+    group: 2,
+  },
+  {
+    id: 'orden',
+    label: 'número de orden, solicitud o historia',
+    re: /\b(SOLICITUD|ORDEN(?:\s+EXTERNA)?|PREFACTURA|HISTORIA(?:\s+CL[ÍI]NICA)?|H\.C\.?|EPISODIO|AFILIACI[ÓO]N|P[ÓO]LIZA)\s*:?\s*([\w/-]{3,})/gi,
     group: 2,
   },
   {
@@ -74,6 +76,15 @@ const PATTERNS = [
     label: 'fecha de nacimiento',
     re: /\b(F\.?\s*NACIMIENTO|FECHA\s+DE\s+NACIMIENTO|NACIDO(?:\s+EL)?)\s*:?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})/gi,
     group: 2,
+  },
+  {
+    // Al extraer texto de un PDF, las columnas salen desordenadas y la etiqueta
+    // suele quedar DESPUÉS del valor: "... : 15/11/2013 Edad: 12 Años
+    // F.Nacimiento :". Sin esta variante, la fecha de nacimiento sobrevive.
+    id: 'nacimiento_invertido',
+    label: 'fecha de nacimiento',
+    re: /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})(?=[^\n]{0,48}?F\.?\s*NACIMIENTO)/gi,
+    group: 1,
   },
   {
     id: 'direccion',
