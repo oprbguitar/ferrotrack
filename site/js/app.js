@@ -24,29 +24,28 @@ import * as settings from './views/settings.js';
 const BASE = new URL('.', import.meta.url).pathname.replace(/js\/$/, '');
 
 const ROUTES = [
-  { id: 'resumen', label: 'Resumen', icon: '🏠', render: clinical.resumen },
-  { id: 'historial', label: 'Historial de análisis', icon: '🗂', render: clinical.historial },
-  { id: 'graficos', label: 'Gráficos', icon: '📈', render: clinical.graficos },
-  { id: 'nutricion', label: 'Nutrición', icon: '🍽', render: nutrition.nutricion },
-  { id: 'seguimiento', label: 'Seguimiento', icon: '✅', render: clinical.seguimiento },
-  { id: 'preguntas', label: 'Preguntas para mi médico', icon: '❓', render: clinical.preguntas },
-  { id: 'controles', label: 'Próximos controles', icon: '🗓', render: clinical.controles },
-  { id: 'perfil', label: 'Perfil (anónimo)', icon: '👤', render: settings.perfil },
+  { id: 'nutricion', label: 'Plan de hoy', icon: '🍽', render: nutrition.nutricion },
+  { id: 'semana', label: 'Plan de la semana', icon: '📅', render: nutrition.semana },
+  { id: 'compra', label: 'Compra semanal', icon: '🛒', render: nutrition.compra },
+  { id: 'plato', label: 'Arma tu plato', icon: '🍳', render: nutrition.platos },
+  { id: 'perfil', label: 'Mi perfil', icon: '👤', render: nutrition.perfil },
   { id: 'config', label: 'Configuración', icon: '⚙️', render: settings.config },
 ];
 
-// Rutas alcanzables pero que no ocupan lugar en el menú.
+// Rutas alcanzables pero que no ocupan lugar en el menú: la parte clínica sigue
+// disponible por enlace directo para quien tenga análisis, sin recargar la portada.
 const HIDDEN_ROUTES = [
-  { id: 'subir', label: 'Subir análisis', render: settings.subir },
-  { id: 'semana', label: 'Plan semanal', render: nutrition.semana },
-  { id: 'plato', label: 'Constructor de platos', render: nutrition.platos },
   { id: 'horario', label: 'Mi horario', render: nutrition.horario },
+  { id: 'subir', label: 'Subir análisis', render: settings.subir },
+  { id: 'resumen', label: 'Resumen clínico', render: clinical.resumen },
+  { id: 'historial', label: 'Historial de análisis', render: clinical.historial },
+  { id: 'graficos', label: 'Gráficos clínicos', render: clinical.graficos },
 ];
 
 const ALL_ROUTES = [...ROUTES, ...HIDDEN_ROUTES];
 
 const app = {
-  route: 'resumen',
+  route: 'nutricion',
   foods: [],
   foodsVersion: null,
   plate: [],
@@ -91,6 +90,7 @@ function buildContext() {
     onDeleteLab: deleteLab,
     onViewLab: (id) => { navigate('historial'); void id; },
     onSaveProfile: saveProfile,
+    onSetupProfile: setupProfile,
     onSaveSettings: saveSettings,
     onSaveSchedule: saveSchedule,
     onAddControl: addControl,
@@ -217,6 +217,18 @@ function saveProfile(profile, symptoms) {
   coach.sayRaw('Perfil actualizado. Los umbrales y el plan se recalcularon con los datos nuevos.', 'feliz');
 }
 
+/** Guarda el perfil por rangos de la portada y rehace el plan de una vez. */
+function setupProfile(profile, schedule) {
+  store.update((c) => {
+    c.profile = { ...c.profile, ...profile };
+    if (schedule) c.schedule = schedule;
+  });
+  app.planCache = null;
+  app.planSeed = 0;
+  navigate('nutricion');
+  coach.sayRaw('¡Listo! Tu plan de nutrición está armado con tus rangos. Dale a <b>▶ Reproducir</b> para ver la semana.', 'celebra');
+}
+
 function saveSettings(next) {
   store.update((c) => { c.settings = { ...c.settings, ...next }; });
   coach.setEnabled(next.coach);
@@ -329,36 +341,21 @@ function main(ctx) {
 
   const header = h('header', { class: 'topbar' }, [
     h('div', {}, [
-      h('div', { class: 'small muted', text: 'Caso:' }),
-      h('div', { class: 'row' }, [
-        h('span', { class: 'case-id', text: ctx.caseData.caseId }),
-        h('button', {
-          class: 'btn btn-sm btn-ghost',
-          title: 'Copiar el código del caso',
-          onclick: (e) => {
-            navigator.clipboard?.writeText(ctx.caseData.caseId);
-            e.target.textContent = '¡copiado!';
-            setTimeout(() => { e.target.textContent = '⧉'; }, 1400);
-          },
-          text: '⧉',
-        }),
-      ]),
+      h('div', { class: 'small muted', text: 'Comer bien es tu energía' }),
+      h('div', { class: 'topbar-title', text: 'FerroTrack · Nutrición' }),
     ]),
     h('div', { class: 'topbar-meta' }, [
-      ctx.lab ? h('div', {}, [
-        h('div', { class: 'small muted', text: 'Último control:' }),
-        h('div', { style: 'font-weight:700', text: new Date(`${ctx.lab.date}T00:00:00`).toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' }) }),
-      ]) : null,
-      h('button', { class: 'btn btn-accent', onclick: () => navigate('subir'), text: '☁ Subir nuevo análisis' }),
+      h('button', { class: 'btn btn-accent', onclick: () => navigate('perfil'), text: '👤 Mi perfil' }),
     ]),
   ]);
 
-  const secondary = ['nutricion', 'semana', 'plato', 'horario'].includes(app.route)
+  const secondary = ['nutricion', 'semana', 'compra', 'plato', 'horario'].includes(app.route)
     ? h('div', { class: 'btn-row', style: 'margin-bottom:16px' }, [
-      h('button', { class: `btn btn-sm ${app.route === 'nutricion' ? 'btn-primary' : ''}`, onclick: () => navigate('nutricion'), text: 'Plan de hoy' }),
-      h('button', { class: `btn btn-sm ${app.route === 'semana' ? 'btn-primary' : ''}`, onclick: () => navigate('semana'), text: 'Semana' }),
-      h('button', { class: `btn btn-sm ${app.route === 'plato' ? 'btn-primary' : ''}`, onclick: () => navigate('plato'), text: 'Constructor de platos' }),
-      h('button', { class: `btn btn-sm ${app.route === 'horario' ? 'btn-primary' : ''}`, onclick: () => navigate('horario'), text: 'Mi horario' }),
+      h('button', { class: `btn btn-sm ${app.route === 'nutricion' ? 'btn-primary' : ''}`, onclick: () => navigate('nutricion'), text: '🍽 Plan de hoy' }),
+      h('button', { class: `btn btn-sm ${app.route === 'semana' ? 'btn-primary' : ''}`, onclick: () => navigate('semana'), text: '📅 Semana' }),
+      h('button', { class: `btn btn-sm ${app.route === 'compra' ? 'btn-primary' : ''}`, onclick: () => navigate('compra'), text: '🛒 Compra' }),
+      h('button', { class: `btn btn-sm ${app.route === 'plato' ? 'btn-primary' : ''}`, onclick: () => navigate('plato'), text: '🍳 Arma tu plato' }),
+      h('button', { class: `btn btn-sm ${app.route === 'horario' ? 'btn-primary' : ''}`, onclick: () => navigate('horario'), text: '🕐 Mi horario' }),
     ])
     : null;
 

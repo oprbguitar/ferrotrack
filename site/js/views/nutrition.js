@@ -1,4 +1,11 @@
-/** Vistas de nutrición: plan del día, semana, constructor de platos y proyección. */
+/**
+ * Nutrición: la portada de la aplicación.
+ *
+ * Es lo primero que se ve. Si todavía no hay un perfil, muestra la pantalla de
+ * arranque por rangos (edad, peso, tipo de día). Con perfil, muestra el visor
+ * del plan: un día grande con tarjetas de colores que se pueden reproducir en
+ * automático, más energía, costo, gráficos y la compra de la semana.
+ */
 
 import { h, card, field, num } from '../ui/dom.js';
 import { barChart, COLORS } from '../ui/charts.js';
@@ -8,254 +15,407 @@ import { planDay, planWeek, eligibleFoods, analyzePlate } from '../nutrition/pla
 import { suggestions } from '../nutrition/absorption.js';
 import { project } from '../nutrition/projection.js';
 import { formatDate } from '../core/longitudinal.js';
+import {
+  AGE_RANGES, WEIGHT_RANGES, OCCUPATIONS, DIETS,
+  findAge, findWeight, findOccupation, profileFromRanges, scheduleFor, energyReport,
+} from '../nutrition/profiles.js';
+import { mealCost, dayCost, shoppingList, soles, pricePerKg, foodCost } from '../nutrition/pricing.js';
 
 const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
 const yieldColor = (y) => (y >= 20 ? 'var(--green)' : y >= 12 ? 'var(--amber)' : 'var(--red)');
 
+// Tema de color y emoji por tipo de comida. Cada momento del día tiene el suyo.
+const MEAL_THEME = {
+  desayuno: { theme: 'sol', emoji: '🌅' },
+  recreo: { theme: 'cielo', emoji: '🍎' },
+  almuerzo: { theme: 'campo', emoji: '🍲' },
+  merienda: { theme: 'uva', emoji: '🥛' },
+  cena: { theme: 'atardecer', emoji: '🌙' },
+};
+const themeFor = (slot) => MEAL_THEME[slot.tag] || MEAL_THEME[slot.id] || MEAL_THEME.merienda;
+
+// Un solo temporizador de reproducción para toda la app.
+let autoTimer = null;
+const stopAuto = () => { if (autoTimer) { clearInterval(autoTimer); autoTimer = null; } };
+
+function profileReady(profile) {
+  return profile && profile.ageYears != null && profile.weightKg != null;
+}
+
 // =====================================================================
-// PLAN DEL DÍA
+// PORTADA / PLAN
 // =====================================================================
 
 export function nutricion(ctx) {
-  const { foods, caseData, ferritin, plan, onRegenerate, onNavigate } = ctx;
+  stopAuto();
+  const { foods, caseData } = ctx;
+
   if (!foods?.length) {
     return card(null, [h('p', { class: 'muted', text: 'La base de alimentos todavía no se cargó.' })]);
   }
+  if (!profileReady(caseData.profile)) {
+    return onboarding(ctx);
+  }
+  return planViewer(ctx);
+}
 
-  const { slots, adaptations } = deriveSlots(caseData.schedule || DEFAULT_SCHEDULE);
-  const projection = project({
-    profile: caseData.profile,
-    absorbedPerDay: plan.absorbed,
-    hemoglobin: ctx.hemoglobin,
-    hemoglobinTarget: ctx.hemoglobinTarget,
-    ferritin,
-  });
+// --------------------------------------------------------------- arranque
 
-  return h('div', { class: 'stack' }, [
-    dayHeader(plan, projection, caseData, onRegenerate),
+export function onboarding(ctx) {
+  const { onSetupProfile } = ctx;
+  const state = {
+    ageId: ctx.caseData.profile.ageRange || null,
+    weightId: ctx.caseData.profile.weightRange || null,
+    occupationId: ctx.caseData.profile.occupation || null,
+    diet: ctx.caseData.profile.diet || 'mixta',
+  };
 
-    card('Tu día, hora por hora', [
-      h('p', { class: 'small muted', text: summarize(caseData.schedule || DEFAULT_SCHEDULE) }),
-      h('div', { class: 'diagram' }, [dayTimeline({ slots, schedule: (caseData.schedule || DEFAULT_SCHEDULE) })]),
-      h('p', { class: 'tiny muted center', text: 'El tamaño de cada punto es el peso de esa comida en el aporte de hierro del día. Naranja: tiene que caber en la lonchera.' }),
-      adaptations.length ? h('div', { class: 'stack', style: 'margin-top:16px' },
-        adaptations.map((a) => h('div', { class: 'notice notice-info' }, [
-          h('span', { class: 'ico', text: '🔁' }),
-          h('div', { text: a.text }),
-        ]))) : null,
-      h('button', { class: 'btn btn-sm', style: 'margin-top:12px', onclick: () => onNavigate('horario'), text: 'Cambiar mi horario' }),
-    ]),
+  const container = h('div', { class: 'stack onboarding' });
 
-    card('Plan de hoy', [
-      plan.corrections.length ? h('div', { class: 'notice notice-good', style: 'margin-bottom:16px' }, [
+  const pickerGrid = (options, selectedId, onPick, big) => h(
+    'div', { class: `pick-grid${big ? ' pick-grid-lg' : ''}` },
+    options.map((o) => h('button', {
+      type: 'button',
+      class: `pick${selectedId === o.id ? ' pick-on' : ''}`,
+      onclick: () => { onPick(o.id); render(); },
+    }, [
+      o.emoji ? h('span', { class: 'pick-emoji', text: o.emoji }) : null,
+      h('span', { class: 'pick-label', text: o.label }),
+      o.desc ? h('span', { class: 'pick-desc', text: o.desc }) : null,
+      o.tag ? h('span', { class: 'pick-tag', text: o.tag }) : null,
+    ])),
+  );
+
+  const render = () => {
+    const ready = state.ageId && state.weightId && state.occupationId;
+    const age = state.ageId && findAge(state.ageId);
+    const weight = state.weightId && findWeight(state.weightId);
+
+    container.replaceChildren(
+      h('section', { class: 'hero hero-welcome' }, [
+        h('div', { class: 'hero-emoji', text: '🥗' }),
+        h('div', {}, [
+          h('h1', { text: 'Arma tu plan de nutrición' }),
+          h('p', { class: 'hero-sub', text: 'Comer bien es lo que te da energía para estudiar, trabajar, caminar y jugar. Elige tus rangos y te preparo el menú del día y de la semana, con su costo aproximado.' }),
+        ]),
+      ]),
+
+      card('1 · ¿Qué edad tienes?', [
+        h('p', { class: 'small muted', text: 'Elige el rango. Con el promedio calculo cuánto hierro y energía necesitas.' }),
+        pickerGrid(AGE_RANGES, state.ageId, (id) => { state.ageId = id; }),
+      ]),
+
+      card('2 · ¿Cuánto pesas más o menos?', [
+        h('p', { class: 'small muted', text: 'Un rango basta. Sirve para ajustar las porciones y la meta del día.' }),
+        pickerGrid(WEIGHT_RANGES, state.weightId, (id) => { state.weightId = id; }),
+      ]),
+
+      card('3 · ¿Cómo es tu día?', [
+        h('p', { class: 'small muted', text: 'No es solo para escolares: también para quien trabaja o para en casa. Ajusta los horarios de comida.' }),
+        pickerGrid(OCCUPATIONS, state.occupationId, (id) => { state.occupationId = id; }, true),
+      ]),
+
+      card('4 · ¿Cómo comes?', [
+        pickerGrid(DIETS, state.diet, (id) => { state.diet = id; }, true),
+      ]),
+
+      h('div', { class: 'launch' }, [
+        ready ? h('p', { class: 'launch-sum', text: `${age.emoji} ${age.tag} · ${weight.label} · ${findOccupation(state.occupationId).label} · promedio ${age.mid} años y ${weight.mid} kg` }) : h('p', { class: 'muted small', text: 'Completa los cuatro pasos para lanzar tu plan.' }),
+        h('button', {
+          class: 'btn btn-launch',
+          disabled: !ready,
+          onclick: () => {
+            const profile = profileFromRanges({
+              ageId: state.ageId, weightId: state.weightId, occupationId: state.occupationId,
+              diet: state.diet, base: ctx.caseData.profile,
+            });
+            onSetupProfile(profile, scheduleFor(state.occupationId));
+          },
+          text: '🚀 Generar mi plan de nutrición',
+        }),
+      ]),
+    );
+  };
+
+  render();
+  return container;
+}
+
+// --------------------------------------------------------------- visor
+
+function planViewer(ctx) {
+  const { foods, caseData, ferritin, onRegenerate, onNavigate } = ctx;
+  const schedule = caseData.schedule || DEFAULT_SCHEDULE;
+
+  // La semana entera se calcula una vez; el visor pasa día por día. El día 0 es HOY.
+  const week = planWeek({ foods, profile: caseData.profile, schedule, ferritin, startDate: new Date() });
+
+  const view = { index: 0, playing: false };
+  const container = h('div', { class: 'stack' });
+
+  const stage = h('div', { class: 'stage' });
+
+  const setIndex = (i) => {
+    view.index = (i + week.days.length) % week.days.length;
+    drawStage();
+  };
+
+  const togglePlay = () => {
+    view.playing = !view.playing;
+    stopAuto();
+    if (view.playing) {
+      autoTimer = setInterval(() => {
+        if (!document.body.contains(stage)) { stopAuto(); return; }
+        setIndex(view.index + 1);
+      }, 4500);
+    }
+    drawHead();
+  };
+
+  const head = h('div', {});
+
+  function drawHead() {
+    const day = week.days[view.index];
+    const cost = dayCost(day);
+    const isToday = view.index === 0;
+
+    head.replaceChildren(
+      h('section', { class: 'hero hero-plan' }, [
+        h('div', { class: 'hero-top' }, [
+          h('div', {}, [
+            h('div', { class: 'hero-kicker', text: isToday ? '🍽 Plan de hoy' : `Plan · ${cap(WEEKDAYS[day.weekday])} ${formatDate(day.date)}` }),
+            h('h1', { text: isToday ? 'Tu menú de hoy' : `Menú del ${WEEKDAYS[day.weekday]}` }),
+          ]),
+          profileChip(caseData.profile, onNavigate),
+        ]),
+
+        h('div', { class: 'hero-kpis' }, [
+          kpi(`${num(day.absorbed, 2)} mg`, 'hierro que aprovechas', 'var(--blood)'),
+          kpi(`${num(day.totals.kcal, 0)}`, 'kcal del día', 'var(--amber)'),
+          kpi(soles(cost), 'costo aproximado', 'var(--green)'),
+          kpi(`${day.coverage} %`, 'de tu meta diaria', day.coverage >= 100 ? 'var(--green)' : 'var(--accent)'),
+        ]),
+
+        h('div', { class: 'viewer-controls' }, [
+          h('button', { class: 'btn btn-sm btn-ghost', onclick: () => setIndex(view.index - 1), text: '‹ Anterior' }),
+          h('button', {
+            class: `btn btn-sm ${view.playing ? 'btn-accent' : 'btn-primary'}`,
+            onclick: togglePlay,
+            text: view.playing ? '⏸ Pausar visor' : '▶ Reproducir semana',
+          }),
+          h('button', { class: 'btn btn-sm btn-ghost', onclick: () => setIndex(view.index + 1), text: 'Siguiente ›' }),
+          h('span', { style: 'flex:1' }),
+          h('button', { class: 'btn btn-sm', onclick: () => { stopAuto(); onRegenerate('day'); }, text: '🎲 Cambiar al azar' }),
+          h('button', { class: 'btn btn-sm', onclick: () => onNavigate('compra'), text: '🛒 Compra semanal' }),
+        ]),
+
+        h('div', { class: 'viewer-dots' }, week.days.map((d, i) => h('button', {
+          type: 'button',
+          class: `vdot${i === view.index ? ' on' : ''}`,
+          title: `${cap(WEEKDAYS[d.weekday])} ${formatDate(d.date)}`,
+          onclick: () => { stopAuto(); view.playing = false; setIndex(i); },
+          text: i === 0 ? 'HOY' : cap(WEEKDAYS[d.weekday]).slice(0, 3),
+        }))),
+      ]),
+    );
+  }
+
+  function drawStage() {
+    const day = week.days[view.index];
+    drawHead();
+
+    const projection = project({
+      profile: caseData.profile,
+      absorbedPerDay: day.absorbed,
+      hemoglobin: ctx.hemoglobin,
+      hemoglobinTarget: ctx.hemoglobinTarget,
+      ferritin,
+    });
+    const energy = energyReport(day, caseData.profile);
+
+    stage.replaceChildren(
+      day.corrections?.length ? h('div', { class: 'notice notice-good' }, [
         h('span', { class: 'ico', text: '🛠️' }),
         h('div', {}, [
-          h('b', { text: 'Correcciones que hizo el planificador' }),
-          h('ul', { style: 'padding-left:18px;margin:4px 0 0' }, plan.corrections.map((c) => h('li', { class: 'tiny', text: c }))),
+          h('b', { text: 'Ajustes que hice para que rinda más' }),
+          h('ul', { style: 'padding-left:18px;margin:4px 0 0' }, day.corrections.map((c) => h('li', { class: 'tiny', text: c }))),
         ]),
       ]) : null,
-      h('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fit,minmax(300px,1fr))' },
-        plan.meals.map((meal) => mealCard(meal, ctx))),
-    ]),
 
-    contributionCard(plan),
-    projectionCard(projection),
+      h('div', { class: 'meal-grid' }, day.meals.map((meal, i) => mealCard(meal, i))),
 
-    card('Rendimiento por comida', [
-      h('p', { class: 'small muted', text: 'Cuánto hierro entra de verdad en cada momento del día. Una comida con mucho hierro y poco rendimiento es hierro desperdiciado.' }),
-      barChart({
-        items: plan.meals.map((m) => ({
-          label: `${m.slot.time} ${m.slot.label}`,
-          value: m.analysis.absorbed,
-          color: yieldColor(m.analysis.yield),
-        })),
-        unit: ' mg',
-      }),
+      energyCard(energy),
+
+      h('div', { class: 'grid grid-2' }, [
+        contributionCard(day),
+        perMealChart(day),
+      ]),
+
+      projectionCard(projection),
+    );
+  }
+
+  container.append(head, stage);
+  drawStage();
+  return container;
+}
+
+function profileChip(profile, onNavigate) {
+  const age = findAge(profile.ageRange);
+  const occ = findOccupation(profile.occupation);
+  return h('button', {
+    class: 'profile-chip',
+    onclick: () => onNavigate('perfil'),
+    title: 'Editar mi perfil',
+  }, [
+    h('span', { class: 'pc-emoji', text: occ.emoji }),
+    h('span', {}, [
+      h('span', { class: 'pc-line', text: `${age.tag} · ${profile.weightKg} kg` }),
+      h('span', { class: 'pc-sub', text: `${occ.label} · ${dietLabel(profile.diet)} · editar` }),
     ]),
   ]);
 }
 
-function dayHeader(plan, projection, caseData, onRegenerate) {
-  const tone = { insuficiente: 'notice-danger', justo: 'notice-warn', bueno: 'notice-good', muy_bueno: 'notice-good' }[projection.verdict.tone];
+const dietLabel = (d) => ({ mixta: 'como de todo', vegetariana: 'vegetariana', vegana: 'vegana' }[d] || d);
 
-  return card('Nutrición para recuperar hierro', [
-    h('div', { class: 'grid grid-3' }, [
-      h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', style: 'color:var(--blood)', text: `${num(plan.absorbed, 2)} mg` }),
-        h('span', { class: 'kpi-label', text: 'hierro absorbido estimado hoy' }),
-      ]),
-      h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', text: `${num(plan.totals.ironTotal, 1)} mg` }),
-        h('span', { class: 'kpi-label', text: 'hierro en el plato (el de la etiqueta)' }),
-      ]),
-      h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', style: `color:${plan.coverage >= 100 ? 'var(--green)' : 'var(--amber)'}`, text: `${plan.coverage} %` }),
-        h('span', { class: 'kpi-label', text: 'de la meta diaria de recuperación' }),
-      ]),
-    ]),
-    h('div', { class: `notice ${tone}`, style: 'margin-top:16px' }, [
-      h('span', { class: 'ico', text: projection.sufficient ? '📈' : '⚠️' }),
-      h('div', {}, [
-        h('b', { text: projection.sufficient ? 'El plan alcanza para recuperar' : 'El plan no alcanza para recuperar' }),
-        h('span', { text: projection.verdict.text }),
-      ]),
-    ]),
-    h('details', { class: 'why' }, [
-      h('summary', { text: '¿De dónde sale la necesidad diaria?' }),
-      h('ul', {}, [
-        ...projection.requirement.explain.map((e) => h('li', { text: e })),
-        h('li', {}, [h('b', { text: `Total: ${num(projection.requirement.total, 2)} mg/día` }), ' de hierro absorbido solo para no perder terreno.']),
-        h('li', { text: `Déficit total estimado por acumular: ${projection.deficit.totalMg} mg (fórmula de Ganzoni, peso ${projection.deficit.weightKg} kg).` }),
-      ]),
-    ]),
-    h('div', { class: 'btn-row', style: 'margin-top:16px' }, [
-      h('button', { class: 'btn btn-primary', onclick: () => onRegenerate('day'), text: '🎲 Otro plan para hoy' }),
-      h('button', { class: 'btn', onclick: () => onRegenerate('week'), text: 'Ver la semana completa' }),
-    ]),
-    h('p', { class: 'tiny muted', style: 'margin-top:12px' }, [
-      `Dieta ${caseData.profile.diet} · presupuesto ${['', 'económico', 'medio', 'amplio'][caseData.profile.budget] || 'medio'} · ${plan.diversity} alimentos distintos hoy.`,
-    ]),
+function kpi(value, label, color) {
+  return h('div', { class: 'hkpi' }, [
+    h('span', { class: 'hkpi-value', style: color ? `color:${color}` : null, text: value }),
+    h('span', { class: 'hkpi-label', text: label }),
   ]);
 }
 
-function mealCard(meal, ctx) {
+// --------------------------------------------------------------- tarjeta de comida
+
+function mealCard(meal, order) {
   const { slot, items, analysis } = meal;
+  const t = themeFor(slot);
+  const cost = mealCost(items);
 
-  return h('div', { class: 'meal' }, [
-    h('div', { class: 'meal-head' }, [
-      h('div', {}, [
-        h('div', { class: 'meal-time', text: pretty(slot.time) }),
-        h('div', { class: 'meal-name', text: slot.label }),
+  return h('article', {
+    class: `mealx mealx--${t.theme}`,
+    style: `--i:${order}`,
+  }, [
+    h('header', { class: 'mealx-head' }, [
+      h('span', { class: 'mealx-emoji', text: t.emoji }),
+      h('div', { style: 'flex:1' }, [
+        h('div', { class: 'mealx-name', text: slot.label }),
+        h('div', { class: 'mealx-time', text: pretty(slot.time) }),
       ]),
-      h('div', { class: 'right' }, [
-        h('div', { class: 'tiny muted', text: `${slot.minutes} min` }),
-        h('div', { class: 'tiny muted', text: `${Math.round(slot.weight * 100)} % del día` }),
-      ]),
+      h('div', { class: 'mealx-cost', text: soles(cost) }),
     ]),
 
-    slot.warning ? h('div', { class: 'notice notice-warn', style: 'margin-bottom:12px;padding:8px 12px' }, [
-      h('span', { class: 'ico', text: '⏰' }), h('div', { class: 'tiny', text: slot.warning }),
-    ]) : null,
+    slot.warning ? h('div', { class: 'mealx-warn', text: `⏰ ${slot.warning}` }) : null,
 
-    h('ul', { class: 'meal-items' }, items.map((it) => h('li', {}, [
-      h('span', { text: it.food.n }),
-      it.role === 'refuerzo' ? h('span', { class: 'role-tag refuerzo', text: 'refuerzo' }) : null,
-      h('span', { class: 'grams', text: `${it.grams} g` }),
+    h('ul', { class: 'mealx-items' }, items.map((it) => h('li', {}, [
+      h('span', { class: 'mi-name' }, [
+        it.food.n,
+        it.role === 'refuerzo' ? h('span', { class: 'mi-tag', text: 'refuerzo' }) : null,
+      ]),
+      h('span', { class: 'mi-grams', text: `${it.grams} g` }),
+      h('span', { class: 'mi-kcal', text: `${Math.round((it.food.kcal * it.grams) / 100)} kcal` }),
     ]))),
 
-    h('div', { class: 'yield-bar' }, [
-      h('div', {
-        class: 'yield-fill',
-        style: `width:${Math.min(100, (analysis.yield / 30) * 100)}%;background:${yieldColor(analysis.yield)}`,
-      }),
+    h('div', { class: 'mealx-foot' }, [
+      chipStat('🩸', `${num(analysis.absorbed, 2)} mg`, 'hierro'),
+      chipStat('🔥', `${Math.round(analysis.totals.kcal)}`, 'kcal'),
+      chipStat('📈', `${analysis.yield}%`, 'rinde', yieldColor(analysis.yield)),
     ]),
 
-    h('div', { class: 'meal-foot' }, [
-      h('span', {}, ['Absorbe ', h('b', { text: `${num(analysis.absorbed, 2)} mg` })]),
-      h('span', {}, ['de ', h('b', { text: `${num(analysis.totals.ironTotal, 1)} mg` })]),
-      h('span', {}, ['Rendimiento ', h('b', { style: `color:${yieldColor(analysis.yield)}`, text: `${analysis.yield} %` })]),
-      h('span', {}, [h('b', { text: `${Math.round(analysis.totals.kcal)}` }), ' kcal']),
-    ]),
-
-    h('details', { class: 'why' }, [
-      h('summary', { text: '¿Por qué rinde así?' }),
-      h('ul', {}, factorList(analysis)),
-    ]),
-
-    h('p', { class: 'tiny muted', style: 'margin-top:8px', text: slot.note }),
-    void ctx,
+    slot.note ? h('p', { class: 'mealx-note', text: slot.note }) : null,
   ]);
 }
 
-function factorList(analysis) {
-  const m = analysis.modifiers;
-  const t = analysis.totals;
-  const rows = [
-    ['Vitamina C', `${Math.round(t.vitC)} mg`, m.vitC, m.vitC > 1.05],
-    ['Proteína animal', `${Math.round(t.animalProteinGrams)} g`, m.meat, m.meat > 1.05],
-    ['Fitatos', `${Math.round(t.phytate)} mg`, m.phytate, m.phytate > 0.95],
-    ['Polifenoles', `${Math.round(t.polyphenol)} mg`, m.polyphenol, m.polyphenol > 0.95],
-    ['Calcio', `${Math.round(t.calcium)} mg`, m.calcium, m.calcium > 0.95],
-  ];
-
-  return [
-    ...rows.map(([label, amount, factor, good]) => h('li', {}, [
-      `${label} (${amount}): `,
-      h('b', { style: `color:${good ? 'var(--green)' : 'var(--red)'}`, text: `×${factor.toFixed(2)}` }),
-    ])),
-    h('li', {}, [
-      'Efecto combinado sobre el hierro vegetal: ',
-      h('b', { text: `×${m.total.toFixed(2)}` }),
-      ` → absorción del ${analysis.nonHemeRate} %.`,
-    ]),
-    t.ironHeme > 0.05 ? h('li', {}, [
-      `Hierro hemo (${num(t.ironHeme, 2)} mg): se absorbe al ${analysis.hemeRate} %, casi sin obstáculos.`,
-    ]) : null,
-  ].filter(Boolean);
+function chipStat(emoji, value, label, color) {
+  return h('span', { class: 'cstat' }, [
+    h('span', { class: 'cstat-emoji', text: emoji }),
+    h('b', { style: color ? `color:${color}` : null, text: value }),
+    h('span', { class: 'cstat-label', text: label }),
+  ]);
 }
 
-function contributionCard(plan) {
-  return card('¿Qué aporta este plan?', [
-    h('div', { class: 'grid grid-3' }, [
-      h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', text: `${num(plan.totals.protein, 0)} g` }),
-        h('span', { class: 'kpi-label', text: 'proteína' }),
+// --------------------------------------------------------------- energía
+
+function energyCard(energy) {
+  const bar = Math.min(100, Math.round(energy.ratio * 100));
+  const tone = energy.level === 'alto' ? 'var(--green)' : energy.level === 'medio' ? 'var(--amber)' : 'var(--orange)';
+
+  return h('section', { class: 'card energy-card' }, [
+    h('div', { class: 'energy-head' }, [
+      h('span', { class: 'energy-emoji', text: '⚡' }),
+      h('div', { style: 'flex:1' }, [
+        h('div', { class: 'card-title', style: 'margin:0', text: 'Con esta comida vas a poder' }),
+        h('div', { class: 'energy-headline', text: energy.headline }),
       ]),
-      h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', text: `${num(plan.totals.vitC, 0)} mg` }),
-        h('span', { class: 'kpi-label', text: 'vitamina C' }),
-      ]),
-      h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', text: `${num(plan.totals.kcal, 0)}` }),
-        h('span', { class: 'kpi-label', text: 'kcal' }),
-      ]),
-      h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', text: `${num(plan.totals.folate, 0)} µg` }),
-        h('span', { class: 'kpi-label', text: 'folato' }),
-      ]),
-      h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', text: `${num(plan.totals.b12, 1)} µg` }),
-        h('span', { class: 'kpi-label', text: 'vitamina B12' }),
-      ]),
-      h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', text: `${num(plan.totals.calcium, 0)} mg` }),
-        h('span', { class: 'kpi-label', text: 'calcio' }),
+      h('div', { class: 'energy-num' }, [
+        h('b', { text: `${energy.kcal}` }),
+        h('span', { class: 'tiny muted', text: `de ~${energy.need} kcal que gastas` }),
       ]),
     ]),
+    h('div', { class: 'energy-track' }, [
+      h('div', { class: 'energy-fill', style: `width:${bar}%;background:${tone}` }),
+    ]),
+    h('div', { class: 'ability-grid' }, energy.abilities.map((a) => h('div', {
+      class: `ability${a.ok ? ' ability-on' : ''}`,
+    }, [
+      h('span', { class: 'ability-emoji', text: a.emoji }),
+      h('span', { text: a.text }),
+    ]))),
+  ]);
+}
+
+// --------------------------------------------------------------- gráficos
+
+function contributionCard(plan) {
+  const rows = [
+    ['proteína', num(plan.totals.protein, 0), 'g'],
+    ['vitamina C', num(plan.totals.vitC, 0), 'mg'],
+    ['calcio', num(plan.totals.calcium, 0), 'mg'],
+    ['folato', num(plan.totals.folate, 0), 'µg'],
+    ['vitamina B12', num(plan.totals.b12, 1), 'µg'],
+    ['zinc', num(plan.totals.zinc, 1), 'mg'],
+  ];
+  return card('Qué más te aporta el día', [
+    h('div', { class: 'nutri-grid' }, rows.map(([label, value, unit]) => h('div', { class: 'nutri-cell' }, [
+      h('span', { class: 'nutri-value', text: `${value} ${unit}` }),
+      h('span', { class: 'nutri-label', text: label }),
+    ]))),
+  ]);
+}
+
+function perMealChart(plan) {
+  return card('Hierro que rinde por comida', [
+    h('p', { class: 'small muted', text: 'Cuánto hierro entra de verdad en cada momento. Verde: bien combinado.' }),
+    barChart({
+      items: plan.meals.map((m) => ({
+        label: `${pretty(m.slot.time)} ${m.slot.label}`,
+        value: m.analysis.absorbed,
+        color: yieldColor(m.analysis.yield),
+      })),
+      unit: ' mg',
+    }),
   ]);
 }
 
 function projectionCard(projection) {
-  return card('Qué pasaría si comes así todos los días', [
-    h('p', { class: 'small muted', text: 'Estimación a partir del hierro que este plan aporta cada día. La velocidad real depende de la causa del déficit y de lo que indique el profesional.' }),
-
+  const tone = { insuficiente: 'notice-danger', justo: 'notice-warn', bueno: 'notice-good', muy_bueno: 'notice-good' }[projection.verdict.tone];
+  return card('Si comes así todos los días', [
+    h('div', { class: `notice ${tone}`, style: 'margin-bottom:16px' }, [
+      h('span', { class: 'ico', text: projection.sufficient ? '📈' : '⚠️' }),
+      h('div', {}, [
+        h('b', { text: projection.sufficient ? 'Vas a recuperar terreno' : 'Todavía no alcanza para recuperar' }),
+        h('span', { text: projection.verdict.text }),
+      ]),
+    ]),
     h('div', { class: 'grid grid-3' }, projection.horizons.map((hz) => h('div', { class: 'horizon' }, [
       h('div', { class: 'horizon-when', text: `${hz.label} · ${hz.sub}` }),
-      hz.ferritin != null ? h('div', {}, [
-        h('div', { class: 'horizon-value', style: 'color:var(--blood)', text: `${num(hz.ferritin, 1)}` }),
-        h('div', { class: 'horizon-range', text: `ferritina ng/mL · rango ${num(hz.range.ferritin[0], 1)}–${num(hz.range.ferritin[1], 1)}` }),
-      ]) : h('div', { class: 'muted small', text: 'sin ferritina de partida' }),
-
-      hz.hemoglobinGain > 0.05 ? h('div', { class: 'tiny', style: 'margin-top:4px' },
-        [`Hemoglobina: ${num(hz.hemoglobin, 1)} g/dL (${hz.hemoglobinGain > 0 ? '+' : ''}${num(hz.hemoglobinGain, 2)})`]) : null,
-
-      hz.capped ? h('div', { class: 'tiny muted', style: 'margin-top:4px', text: 'A partir de aquí el cuerpo baja la absorción: el depósito ya está lleno.' }) : null,
-
       h('div', { class: 'horizon-feel' }, [
         h('div', { class: 'icon', text: hz.feeling.icon }),
         h('b', { text: hz.feeling.title }),
         h('p', { text: hz.feeling.text }),
       ]),
     ]))),
-
-    projection.monthsToRepletion ? h('div', { class: 'notice notice-info', style: 'margin-top:16px' }, [
-      h('span', { class: 'ico', text: '🗓️' }),
-      h('div', {}, [
-        h('b', { text: `Reposición completa estimada: ${num(projection.monthsToRepletion, 1)} meses` }),
-        h('span', { text: `Sosteniendo ${num(projection.absorbedPerDay, 2)} mg de hierro absorbido al día, con un excedente de ${num(projection.surplus, 2)} mg sobre las pérdidas.` }),
-      ]),
-    ]) : null,
   ]);
 }
 
@@ -264,26 +424,30 @@ function projectionCard(projection) {
 // =====================================================================
 
 export function semana(ctx) {
+  stopAuto();
   const { foods, caseData, ferritin, onNavigate } = ctx;
+  if (!profileReady(caseData.profile)) return onboarding(ctx);
+
   const week = planWeek({
     foods, profile: caseData.profile, schedule: caseData.schedule || DEFAULT_SCHEDULE,
     ferritin, startDate: new Date(),
   });
+  const weekCost = week.days.reduce((a, d) => a + dayCost(d), 0);
 
   return h('div', { class: 'stack' }, [
-    card('Tu semana', [
+    card('Tu semana completa', [
       h('div', { class: 'grid grid-3' }, [
         h('div', { class: 'kpi' }, [
           h('span', { class: 'kpi-value', text: `${num(week.averageAbsorbed, 2)} mg` }),
-          h('span', { class: 'kpi-label', text: 'promedio de hierro absorbido al día' }),
+          h('span', { class: 'kpi-label', text: 'hierro absorbido al día (promedio)' }),
+        ]),
+        h('div', { class: 'kpi' }, [
+          h('span', { class: 'kpi-value', style: 'color:var(--green)', text: soles(weekCost) }),
+          h('span', { class: 'kpi-label', text: 'costo aproximado de la semana' }),
         ]),
         h('div', { class: 'kpi' }, [
           h('span', { class: 'kpi-value', text: String(week.variety) }),
           h('span', { class: 'kpi-label', text: 'alimentos distintos en la semana' }),
-        ]),
-        h('div', { class: 'kpi' }, [
-          h('span', { class: 'kpi-value', text: `${num(week.target, 2)} mg` }),
-          h('span', { class: 'kpi-label', text: 'meta diaria' }),
         ]),
       ]),
       h('div', { style: 'margin-top:16px' }, [
@@ -297,30 +461,173 @@ export function semana(ctx) {
           unit: ' mg',
         }),
       ]),
-      h('button', { class: 'btn', style: 'margin-top:16px', onclick: () => onNavigate('nutricion'), text: '← Volver al plan de hoy' }),
+      h('div', { class: 'btn-row', style: 'margin-top:16px' }, [
+        h('button', { class: 'btn btn-primary', onclick: () => onNavigate('nutricion'), text: '‹ Volver al visor del día' }),
+        h('button', { class: 'btn', onclick: () => onNavigate('compra'), text: '🛒 Ver la compra de la semana' }),
+      ]),
     ]),
 
-    ...week.days.map((day) => card(`${WEEKDAYS[day.weekday][0].toUpperCase()}${WEEKDAYS[day.weekday].slice(1)} ${formatDate(day.date)}`, [
-      h('div', { class: 'spread', style: 'margin-bottom:12px' }, [
-        h('span', { class: 'small muted', text: `${day.diversity} alimentos · ${Math.round(day.totals.kcal)} kcal` }),
-        h('span', { class: 'mono small', style: `color:${day.absorbed >= day.target ? 'var(--green)' : 'var(--amber)'}`,
-          text: `${num(day.absorbed, 2)} mg absorbidos (${day.coverage} %)` }),
-      ]),
-      h('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fit,minmax(200px,1fr))' },
-        day.meals.map((m) => h('div', { class: 'small' }, [
-          h('div', { class: 'meal-time', text: pretty(m.slot.time) }),
-          h('div', { style: 'font-weight:600;margin-bottom:4px', text: m.slot.label }),
-          h('div', { class: 'tiny muted', text: m.items.map((i) => i.food.n).join(' · ') }),
-        ]))),
-    ])),
+    ...week.days.map((day) => {
+      const cost = dayCost(day);
+      return h('section', { class: 'card weekday-card' }, [
+        h('div', { class: 'spread', style: 'margin-bottom:12px' }, [
+          h('div', {}, [
+            h('div', { class: 'weekday-name', text: `${cap(WEEKDAYS[day.weekday])} ${formatDate(day.date)}` }),
+            h('span', { class: 'small muted', text: `${day.diversity} alimentos · ${Math.round(day.totals.kcal)} kcal · ${soles(cost)}` }),
+          ]),
+          h('span', { class: 'mono small', style: `color:${day.absorbed >= day.target ? 'var(--green)' : 'var(--amber)'}`,
+            text: `${num(day.absorbed, 2)} mg (${day.coverage} %)` }),
+        ]),
+        h('div', { class: 'week-meals' }, day.meals.map((m) => {
+          const t = themeFor(m.slot);
+          return h('div', { class: `week-meal week-meal--${t.theme}` }, [
+            h('div', { class: 'wm-top', text: `${t.emoji} ${m.slot.label}` }),
+            h('div', { class: 'tiny', text: m.items.map((i) => i.food.n).join(' · ') }),
+          ]);
+        })),
+      ]);
+    }),
   ]);
 }
 
 // =====================================================================
-// CONSTRUCTOR DE PLATOS
+// COMPRA SEMANAL
+// =====================================================================
+
+export function compra(ctx) {
+  stopAuto();
+  const { foods, caseData, ferritin, onNavigate } = ctx;
+  if (!profileReady(caseData.profile)) return onboarding(ctx);
+
+  const week = planWeek({
+    foods, profile: caseData.profile, schedule: caseData.schedule || DEFAULT_SCHEDULE,
+    ferritin, startDate: new Date(),
+  });
+  const list = shoppingList(week);
+
+  return h('div', { class: 'stack' }, [
+    h('section', { class: 'hero hero-shop' }, [
+      h('div', { class: 'hero-emoji', text: '🛒' }),
+      h('div', { style: 'flex:1' }, [
+        h('h1', { text: 'Tu compra de la semana' }),
+        h('p', { class: 'hero-sub', text: 'Todo lo que el plan usa en 7 días, junto y con precio aproximado de mercado peruano. Llévalo así al mercado.' }),
+      ]),
+      h('div', { class: 'shop-total' }, [
+        h('span', { class: 'shop-total-value', text: soles(list.total) }),
+        h('span', { class: 'tiny', text: `≈ ${soles(list.perDay)} por día` }),
+      ]),
+    ]),
+
+    h('div', { class: 'notice notice-info' }, [
+      h('span', { class: 'ico', text: '💡' }),
+      h('div', { class: 'small' }, [
+        h('b', { text: 'Precios referenciales' }),
+        'Son precios de mercado de barrio y cambian por temporada y región. Úsalo como estimación para saber si te alcanza, no como cuenta exacta.',
+      ]),
+    ]),
+
+    ...list.groups.map((g) => h('section', { class: 'card shop-group' }, [
+      h('div', { class: 'shop-group-head' }, [
+        h('span', { class: 'card-title', style: 'margin:0', text: g.label }),
+        h('span', { class: 'shop-group-total', text: soles(g.soles) }),
+      ]),
+      h('table', { class: 'table shop-table' }, [
+        h('thead', {}, [h('tr', {}, [
+          h('th', { text: 'Alimento' }), h('th', { text: 'Compra' }),
+          h('th', { class: 'right', text: 'S/ x kg' }), h('th', { class: 'right', text: 'Costo' }),
+        ])]),
+        h('tbody', {}, g.items.map((it) => h('tr', {}, [
+          h('td', { text: it.food.n }),
+          h('td', { class: 'small', text: it.buyLabel }),
+          h('td', { class: 'num muted', text: soles(it.pricePerKg) }),
+          h('td', { class: 'num', text: soles(it.soles) }),
+        ]))),
+      ]),
+    ])),
+
+    h('div', { class: 'btn-row' }, [
+      h('button', { class: 'btn btn-primary', onclick: () => onNavigate('nutricion'), text: '‹ Volver al plan' }),
+      h('button', { class: 'btn', onclick: () => onNavigate('semana'), text: 'Ver el detalle de la semana' }),
+    ]),
+  ]);
+}
+
+// =====================================================================
+// PERFIL (rangos) — reemplaza el perfil clínico
+// =====================================================================
+
+export function perfil(ctx) {
+  const { caseData, onSetupProfile, onNavigate } = ctx;
+  const p = caseData.profile;
+  const state = {
+    ageId: p.ageRange || '10-13',
+    weightId: p.weightRange || '50-60',
+    occupationId: p.occupation || 'colegio',
+    diet: p.diet || 'mixta',
+    budget: p.budget || 2,
+  };
+
+  const container = h('div', { class: 'stack' });
+
+  const row = (title, options, key, big) => card(title, [
+    h('div', { class: `pick-grid${big ? ' pick-grid-lg' : ''}` }, options.map((o) => h('button', {
+      type: 'button', class: `pick${state[key] === o.id ? ' pick-on' : ''}`,
+      onclick: () => { state[key] = o.id; render(); },
+    }, [
+      o.emoji ? h('span', { class: 'pick-emoji', text: o.emoji }) : null,
+      h('span', { class: 'pick-label', text: o.label }),
+      o.desc ? h('span', { class: 'pick-desc', text: o.desc }) : null,
+    ]))),
+  ]);
+
+  const render = () => {
+    container.replaceChildren(
+      h('section', { class: 'hero hero-shop' }, [
+        h('div', { class: 'hero-emoji', text: '👤' }),
+        h('div', { style: 'flex:1' }, [
+          h('h1', { text: 'Mi perfil' }),
+          h('p', { class: 'hero-sub', text: 'Cambia tus rangos cuando quieras: el plan y el costo se recalculan al instante.' }),
+        ]),
+      ]),
+      row('Edad', AGE_RANGES, 'ageId'),
+      row('Peso', WEIGHT_RANGES, 'weightId'),
+      row('Tu día', OCCUPATIONS, 'occupationId', true),
+      row('Alimentación', DIETS, 'diet', true),
+      card('Presupuesto', [
+        h('div', { class: 'pick-grid pick-grid-lg' }, [
+          { id: 1, label: 'Ajustado', emoji: '🪙' }, { id: 2, label: 'Medio', emoji: '💵' }, { id: 3, label: 'Amplio', emoji: '💳' },
+        ].map((o) => h('button', {
+          type: 'button', class: `pick${state.budget === o.id ? ' pick-on' : ''}`,
+          onclick: () => { state.budget = o.id; render(); },
+        }, [h('span', { class: 'pick-emoji', text: o.emoji }), h('span', { class: 'pick-label', text: o.label })]))),
+      ]),
+      h('div', { class: 'btn-row' }, [
+        h('button', {
+          class: 'btn btn-launch',
+          onclick: () => {
+            const profile = profileFromRanges({
+              ageId: state.ageId, weightId: state.weightId, occupationId: state.occupationId,
+              diet: state.diet, budget: state.budget, base: caseData.profile,
+            });
+            onSetupProfile(profile, scheduleFor(state.occupationId));
+          },
+          text: '✅ Guardar y rehacer el plan',
+        }),
+        h('button', { class: 'btn', onclick: () => onNavigate('nutricion'), text: 'Volver sin cambios' }),
+      ]),
+    );
+  };
+
+  render();
+  return container;
+}
+
+// =====================================================================
+// CONSTRUCTOR DE PLATOS (se mantiene, con costo)
 // =====================================================================
 
 export function platos(ctx) {
+  stopAuto();
   const { foods, caseData, ferritin } = ctx;
   const catalog = eligibleFoods(foods, caseData.profile);
   const selected = ctx.plateState;
@@ -330,7 +637,7 @@ export function platos(ctx) {
   const render = () => {
     container.replaceChildren(
       card('Constructor de platos', [
-        h('p', { class: 'small muted', text: 'Arma una combinación y mira cuánto hierro entra de verdad. No mide cuánto hierro trae el plato: mide qué tan bien está armado para aprovecharlo.' }),
+        h('p', { class: 'small muted', text: 'Arma una combinación y mira cuánto hierro entra de verdad y cuánto cuesta.' }),
         h('div', { class: 'field' }, [
           h('label', { text: 'Agregar alimento' }),
           foodPicker(catalog, (food) => {
@@ -350,7 +657,7 @@ export function platos(ctx) {
 
 function foodPicker(catalog, onPick) {
   const groups = [...new Set(catalog.map((f) => f.g))];
-  const select = h('select', {
+  return h('select', {
     onchange: (e) => {
       const food = catalog.find((f) => f.id === e.target.value);
       if (food) onPick(food);
@@ -362,14 +669,13 @@ function foodPicker(catalog, onPick) {
       catalog.filter((f) => f.g === g).sort((a, b) => a.n.localeCompare(b.n))
         .map((f) => h('option', { value: f.id, text: `${f.n} — ${num(f.fe, 1)} mg Fe/100 g` })))),
   ]);
-  return select;
 }
 
 function plateTable(selected, rerender) {
   return h('table', { class: 'table' }, [
     h('thead', {}, [h('tr', {}, [
       h('th', { text: 'Alimento' }), h('th', { class: 'right', text: 'Cantidad' }),
-      h('th', { class: 'right', text: 'Fe' }), h('th', { class: 'right', text: 'Vit. C' }), h('th', {}),
+      h('th', { class: 'right', text: 'Fe' }), h('th', { class: 'right', text: 'Costo' }), h('th', {}),
     ])]),
     h('tbody', {}, selected.map((item, i) => h('tr', {}, [
       h('td', {}, [item.food.n, h('div', { class: 'tiny muted', text: item.food.pu })]),
@@ -382,7 +688,7 @@ function plateTable(selected, rerender) {
         h('span', { class: 'tiny muted', text: ' g' }),
       ]),
       h('td', { class: 'num', text: num((item.food.fe * item.grams) / 100, 2) }),
-      h('td', { class: 'num', text: num((item.food.c * item.grams) / 100, 0) }),
+      h('td', { class: 'num muted', text: soles(foodCost(item.food, item.grams)) }),
       h('td', { class: 'right' }, [h('button', {
         class: 'btn btn-sm', onclick: () => { selected.splice(i, 1); rerender(); }, text: 'Quitar',
       })]),
@@ -393,6 +699,7 @@ function plateTable(selected, rerender) {
 function plateAnalysis(selected, ctx, catalog, rerender) {
   const analysis = analyzePlate(selected, ctx);
   const tips = suggestions(selected, catalog, { ferritin: ctx.ferritin });
+  const cost = mealCost(selected);
 
   return card('Análisis de la combinación', [
     h('div', { class: 'grid grid-3' }, [
@@ -406,8 +713,8 @@ function plateAnalysis(selected, ctx, catalog, rerender) {
         h('span', { class: 'kpi-label', text: `absorbidos de ${num(analysis.result.totals.ironTotal, 1)} mg del plato` }),
       ]),
       h('div', { class: 'kpi' }, [
-        h('span', { class: 'kpi-value', text: `${analysis.pctOfNeed} %` }),
-        h('span', { class: 'kpi-label', text: 'de la necesidad diaria de hierro absorbido' }),
+        h('span', { class: 'kpi-value', style: 'color:var(--green)', text: soles(cost) }),
+        h('span', { class: 'kpi-label', text: 'costo aproximado del plato' }),
       ]),
     ]),
 
@@ -426,19 +733,15 @@ function plateAnalysis(selected, ctx, catalog, rerender) {
         }) : null,
       ]))),
     ]) : null,
-
-    h('details', { class: 'why' }, [
-      h('summary', { text: 'Ver el cálculo completo' }),
-      h('ul', {}, factorList(analysis.result)),
-    ]),
   ]);
 }
 
 // =====================================================================
-// HORARIO
+// HORARIO (se mantiene)
 // =====================================================================
 
 export function horario(ctx) {
+  stopAuto();
   const { caseData, onSaveSchedule, onNavigate } = ctx;
   const s = structuredClone(caseData.schedule || DEFAULT_SCHEDULE);
 
@@ -448,8 +751,16 @@ export function horario(ctx) {
     const { slots, adaptations } = deriveSlots(s);
 
     container.replaceChildren(
-      card('Horario del colegio', [
-        h('div', { class: 'grid grid-3' }, [
+      card('Horario del día', [
+        h('p', { class: 'small muted', text: summarize(s) }),
+        h('label', { class: 'check', style: 'margin-bottom:12px' }, [
+          h('input', {
+            type: 'checkbox', checked: s.school.enabled,
+            onchange: (e) => { s.school.enabled = e.target.checked; render(); },
+          }),
+          'Voy al colegio estos días',
+        ]),
+        s.school.enabled ? h('div', { class: 'grid grid-3' }, [
           field('Hora de entrada', h('input', {
             type: 'time', value: s.school.start,
             oninput: (e) => { s.school.start = e.target.value; render(); },
@@ -461,75 +772,12 @@ export function horario(ctx) {
           field('Traslado (min)', h('input', {
             type: 'number', min: '0', max: '120', value: String(s.school.travelMinutes),
             oninput: (e) => { s.school.travelMinutes = Number(e.target.value) || 0; render(); },
-          }), 'Cuánto antes hay que salir de casa'),
-        ]),
-        h('label', { class: 'check' }, [
-          h('input', {
-            type: 'checkbox', checked: s.school.enabled,
-            onchange: (e) => { s.school.enabled = e.target.checked; render(); },
-          }),
-          'Hay colegio estos días',
-        ]),
+          })),
+        ]) : null,
       ]),
 
-      card('Recreos', [
-        h('p', { class: 'small muted', text: 'Cada recreo es un momento de comida: el plan solo pone ahí cosas que se comen de pie, con la mano y en pocos minutos.' }),
-        ...s.breaks.map((br, i) => h('div', { class: 'grid grid-3', style: 'align-items:end' }, [
-          field('Nombre', h('input', {
-            type: 'text', value: br.label,
-            oninput: (e) => { br.label = e.target.value; },
-          })),
-          field('Empieza', h('input', {
-            type: 'time', value: br.start,
-            oninput: (e) => { br.start = e.target.value; render(); },
-          })),
-          h('div', { class: 'row' }, [
-            h('div', { style: 'flex:1' }, [field('Duración (min)', h('input', {
-              type: 'number', min: '5', max: '120', value: String(br.minutes),
-              oninput: (e) => { br.minutes = Number(e.target.value) || 15; render(); },
-            }))]),
-            h('button', {
-              class: 'btn btn-sm', style: 'margin-bottom:16px',
-              onclick: () => { s.breaks.splice(i, 1); render(); }, text: 'Quitar',
-            }),
-          ]),
-        ])),
-        h('button', {
-          class: 'btn btn-sm',
-          onclick: () => {
-            s.breaks.push({ id: `recreo${s.breaks.length + 1}`, label: `Recreo ${s.breaks.length + 1}`, start: '13:00', minutes: 15 });
-            render();
-          },
-          text: '+ Agregar recreo',
-        }),
-      ]),
-
-      card('Desayuno', [
-        h('div', { class: 'chips', style: 'margin-bottom:16px' }, [
-          ['rapido', 'Rápido (antes de salir)'],
-          ['completo', 'Completo (hay tiempo de cocinar)'],
-          ['ayuno', 'Ayuno (primera comida en el recreo)'],
-        ].map(([value, label]) => h('button', {
-          class: 'chip', 'aria-pressed': String(s.breakfastMode === value),
-          onclick: () => { s.breakfastMode = value; render(); }, text: label,
-        }))),
-        s.breakfastMode !== 'ayuno' ? h('div', { class: 'grid grid-2' }, [
-          field('Hora', h('input', {
-            type: 'time', value: s.meals.desayuno.time,
-            oninput: (e) => { s.meals.desayuno.time = e.target.value; render(); },
-          })),
-          field('Cuántos minutos hay', h('input', {
-            type: 'number', min: '5', max: '90', value: String(s.meals.desayuno.minutes),
-            oninput: (e) => { s.meals.desayuno.minutes = Number(e.target.value) || 15; render(); },
-          })),
-        ]) : h('div', { class: 'notice notice-info' }, [
-          h('span', { class: 'ico', text: '⏳' }),
-          h('div', { class: 'small', text: 'En modo ayuno no se desayuna en casa: el primer recreo pasa a ser la primera comida del día y carga más peso en el plan.' }),
-        ]),
-      ]),
-
-      card('Resto de las comidas', [
-        ...['almuerzo', 'merienda', 'cena'].map((key) => h('div', { class: 'grid grid-3', style: 'align-items:end' }, [
+      card('Horas de comida', [
+        ...['desayuno', 'almuerzo', 'merienda', 'cena'].map((key) => h('div', { class: 'grid grid-3', style: 'align-items:end' }, [
           field('Comida', h('input', {
             type: 'text', value: s.meals[key].label,
             oninput: (e) => { s.meals[key].label = e.target.value; },
@@ -556,26 +804,10 @@ export function horario(ctx) {
 
       card('Así queda tu día', [
         h('div', { class: 'diagram' }, [dayTimeline({ slots, schedule: s })]),
-        h('table', { class: 'table', style: 'margin-top:16px' }, [
-          h('thead', {}, [h('tr', {}, [
-            h('th', { text: 'Momento' }), h('th', { text: 'Hora' }), h('th', { text: 'Minutos' }),
-            h('th', { class: 'right', text: 'Peso' }), h('th', { text: 'Condición' }),
-          ])]),
-          h('tbody', {}, slots.map((slot) => h('tr', {}, [
-            h('td', { text: slot.label }),
-            h('td', { class: 'mono', text: pretty(slot.time) }),
-            h('td', { class: 'num', text: String(slot.minutes) }),
-            h('td', { class: 'num', text: `${Math.round(slot.weight * 100)} %` }),
-            h('td', { class: 'tiny muted', text: slot.portable ? 'lonchera' : slot.quick ? 'rápida' : 'con tiempo' }),
-          ]))),
-        ]),
         adaptations.length ? h('div', { class: 'stack', style: 'margin-top:16px' },
           adaptations.map((a) => h('div', { class: 'notice notice-info' }, [
             h('span', { class: 'ico', text: '🔁' }), h('div', { class: 'small', text: a.text }),
           ]))) : null,
-        slots.filter((x) => x.warning).map((x) => h('div', { class: 'notice notice-warn', style: 'margin-top:8px' }, [
-          h('span', { class: 'ico', text: '⏰' }), h('div', { class: 'small', text: x.warning }),
-        ])),
       ]),
 
       h('div', { class: 'btn-row' }, [
@@ -592,5 +824,7 @@ export function horario(ctx) {
   render();
   return container;
 }
+
+const cap = (str) => (str ? str[0].toUpperCase() + str.slice(1) : str);
 
 export { yieldColor, COLORS, planDay };
